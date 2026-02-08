@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhichAI Playground</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="pg-header">
+    <div class="pg-header-left">
+      <h1>WhichAI Playground</h1>
+    </div>
+    <div class="pg-header-right">
+      <a href="../index.html" class="pg-btn">&larr; Dashboard</a>
+      <button id="btn-settings" class="pg-btn">Settings &#9881;</button>
+      <button id="theme-toggle" class="pg-theme-toggle" aria-label="Toggle theme">
+        <span class="icon-sun">&#9788;</span>
+        <span class="icon-moon">&#9790;</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main 2-Panel Layout -->
+  <main class="playground-layout">
+    <!-- LEFT PANEL: Config & Prompt -->
+    <div class="pg-panel pg-panel-left">
+      <!-- Use Case Selector -->
+      <div class="pg-config-section">
+        <label for="select-usecase">Use Case</label>
+        <select id="select-usecase" class="pg-select">
+          <option value="">-- Select a use case --</option>
+        </select>
+      </div>
+
+      <!-- Model Selector -->
+      <div class="pg-config-section">
+        <label for="select-model">Model</label>
+        <select id="select-model" class="pg-select">
+          <option value="">-- Select a model --</option>
+        </select>
+        <div id="model-recommendation" class="pg-recommendation" style="display:none">
+          <span class="rec-badge">Recommended</span>
+          <span id="rec-text"></span>
+        </div>
+      </div>
+
+      <!-- System Prompt (collapsible) -->
+      <div class="pg-config-section">
+        <div id="system-prompt-section" class="pg-collapsible">
+          <div class="pg-collapsible-header" id="toggle-system-prompt">
+            <span>System Prompt (advanced)</span>
+            <span class="arrow">&#9654;</span>
+          </div>
+          <div class="pg-collapsible-body">
+            <textarea id="system-prompt" class="pg-textarea pg-textarea-system" placeholder="Optional system instructions for the model..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- User Prompt -->
+      <div class="pg-config-section" style="flex:1;display:flex;flex-direction:column">
+        <label for="user-prompt">Your Prompt</label>
+        <textarea id="user-prompt" class="pg-textarea pg-textarea-prompt" style="flex:1" placeholder="Type your prompt here..."></textarea>
+        <div class="pg-prompt-stats">
+          <span id="token-estimate">~0 tokens</span>
+          <span id="cost-estimate">Est: $0.000</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="pg-actions">
+        <button id="btn-optimize" class="pg-btn">Optimize</button>
+        <button id="btn-library" class="pg-btn">Library</button>
+        <button id="btn-send" class="pg-btn pg-btn-primary" disabled>Send</button>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL: Response -->
+    <div class="pg-panel pg-panel-right">
+      <div class="pg-response-area">
+        <!-- Conversation Toggle -->
+        <div class="pg-conversation-toggle">
+          <div id="toggle-conversation" class="pg-toggle-switch"></div>
+          <span>Conversation Mode</span>
+        </div>
+
+        <!-- Messages -->
+        <div id="messages" class="pg-messages">
+          <div class="pg-empty-state">
+            Select a model and type a prompt to get started.
+          </div>
+        </div>
+
+        <!-- Response Stats -->
+        <div id="response-stats" class="pg-response-stats" style="display:none">
+          <div class="pg-response-stats-left">
+            <span id="stat-tokens"></span>
+            <span id="stat-cost"></span>
+            <span id="stat-time"></span>
+          </div>
+          <div class="pg-response-stats-right">
+            <button id="btn-copy" class="pg-btn" style="display:none">Copy</button>
+            <button id="btn-export" class="pg-btn" style="display:none">Export</button>
+            <button id="btn-new" class="pg-btn" style="display:none">New Chat</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Cost Tracker Bar -->
+  <footer class="pg-cost-bar">
+    <div class="pg-cost-bar-left">
+      <span>Session: <strong id="cost-session">$0.000</strong></span>
+      <span>All-time: <strong id="cost-alltime">$0.000</strong></span>
+    </div>
+    <div>
+      <button id="btn-cost-breakdown" class="pg-btn" style="font-size:0.72rem;padding:2px 8px">Breakdown</button>
+      <button id="btn-cost-reset" class="pg-btn" style="font-size:0.72rem;padding:2px 8px">Reset</button>
+    </div>
+  </footer>
+
+  <!-- Settings Modal -->
+  <div id="modal-settings" class="pg-modal-overlay">
+    <div class="pg-modal">
+      <div class="pg-modal-header">
+        <h2>Settings</h2>
+        <button class="pg-btn-icon modal-close">&times;</button>
+      </div>
+      <div class="pg-modal-body">
+        <div class="pg-key-warning">
+          <strong>Security Note:</strong> API keys are stored in your browser only and sent directly to the provider's API (or through the local CORS proxy). Never use this on a shared or public computer with "Remember" enabled.
+        </div>
+
+        <h3 style="font-size:0.85rem;margin-bottom:0.5rem">API Keys</h3>
+
+        <div class="pg-api-key-row">
+          <span class="pg-provider-label" style="color:var(--color-openai)">OpenAI</span>
+          <input id="key-openai" type="password" class="pg-input" placeholder="sk-...">
+          <button class="pg-btn test-key-btn" data-provider="openai">Test</button>
+          <span class="pg-api-key-status" id="status-openai"></span>
+        </div>
+        <div class="pg-api-key-row">
+          <span class="pg-provider-label" style="color:var(--color-anthropic)">Anthropic</span>
+          <input id="key-anthropic" type="password" class="pg-input" placeholder="sk-ant-...">
+          <button class="pg-btn test-key-btn" data-provider="anthropic">Test</button>
+          <span class="pg-api-key-status" id="status-anthropic"></span>
+        </div>
+        <div class="pg-api-key-row">
+          <span class="pg-provider-label" style="color:var(--color-google)">Google</span>
+          <input id="key-google" type="password" class="pg-input" placeholder="AIza...">
+          <button class="pg-btn test-key-btn" data-provider="google">Test</button>
+          <span class="pg-api-key-status" id="status-google"></span>
+        </div>
+
+        <div class="pg-storage-option">
+          <input type="checkbox" id="remember-keys">
+          <label for="remember-keys">Remember keys (localStorage) &mdash; uncheck for session-only</label>
+        </div>
+      </div>
+      <div class="pg-modal-footer">
+        <button class="pg-btn modal-close">Close</button>
+        <button id="btn-save-settings" class="pg-btn pg-btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Library Modal -->
+  <div id="modal-library" class="pg-modal-overlay">
+    <div class="pg-modal" style="max-width:700px">
+      <div class="pg-modal-header">
+        <h2>Prompt Library</h2>
+        <button class="pg-btn-icon modal-close">&times;</button>
+      </div>
+      <div class="pg-modal-body">
+        <div class="pg-library-search">
+          <input id="library-search" class="pg-input" placeholder="Search prompts...">
+          <select id="library-filter" class="pg-select" style="width:auto;min-width:120px">
+            <option value="">All Use Cases</option>
+          </select>
+        </div>
+        <div id="library-tabs" class="pg-library-tabs">
+          <button class="pg-library-tab active" data-tab="starters">Starters</button>
+          <button class="pg-library-tab" data-tab="saved">My Prompts</button>
+        </div>
+        <div id="library-list" class="pg-library-list"></div>
+      </div>
+      <div class="pg-modal-footer">
+        <button id="btn-import-library" class="pg-btn">Import</button>
+        <button id="btn-export-library" class="pg-btn">Export</button>
+        <button id="btn-save-current" class="pg-btn pg-btn-primary">Save Current Prompt</button>
+        <button class="pg-btn modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Optimizer Modal -->
+  <div id="modal-optimizer" class="pg-modal-overlay">
+    <div class="pg-modal">
+      <div class="pg-modal-header">
+        <h2>Prompt Optimizer</h2>
+        <button class="pg-btn-icon modal-close">&times;</button>
+      </div>
+      <div class="pg-modal-body">
+        <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.5rem">
+          Describe what you want in plain English. The optimizer will create an optimized system prompt and user prompt template using your selected model.
+        </p>
+        <textarea id="optimizer-input" class="pg-textarea pg-optimizer-input" placeholder="e.g., I need a prompt that reviews Python code for security vulnerabilities and outputs a structured report..."></textarea>
+        <div id="optimizer-result" class="pg-optimizer-result">
+          <h3>System Prompt</h3>
+          <pre id="optimizer-system"></pre>
+          <h3>User Prompt Template</h3>
+          <pre id="optimizer-user"></pre>
+          <div id="optimizer-explanation" class="pg-optimizer-explanation"></div>
+        </div>
+      </div>
+      <div class="pg-modal-footer">
+        <button id="btn-run-optimizer" class="pg-btn pg-btn-primary">Optimize</button>
+        <button id="btn-use-optimized" class="pg-btn" style="display:none">Use This Prompt</button>
+        <button class="pg-btn modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cost Breakdown Modal -->
+  <div id="modal-breakdown" class="pg-modal-overlay">
+    <div class="pg-modal" style="max-width:500px">
+      <div class="pg-modal-header">
+        <h2>Cost Breakdown</h2>
+        <button class="pg-btn-icon modal-close">&times;</button>
+      </div>
+      <div class="pg-modal-body">
+        <div id="breakdown-content"></div>
+      </div>
+      <div class="pg-modal-footer">
+        <button class="pg-btn modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden file input for import -->
+  <input type="file" id="import-file-input" accept=".json" style="display:none">
+
+  <!-- Scripts: load order matters -->
+  <script src="providers.js"></script>
+  <script src="library.js"></script>
+  <script src="optimizer.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
