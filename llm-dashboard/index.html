@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Price-Performance Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header id="header">
+    <div class="header-left">
+      <h1>LLM Price-Performance Dashboard</h1>
+      <span id="last-updated" class="meta-text"></span>
+    </div>
+    <div class="header-right">
+      <div id="source-links" class="source-links"></div>
+      <button id="theme-toggle" aria-label="Toggle dark/light mode">
+        <span class="icon-sun">&#9788;</span>
+        <span class="icon-moon">&#9790;</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Filters Bar -->
+  <section id="filters-bar" class="filters-bar">
+    <div class="filter-group">
+      <label class="filter-label">Providers</label>
+      <div id="provider-filters" class="checkbox-group"></div>
+    </div>
+    <div class="filter-group">
+      <label class="filter-label">Tags</label>
+      <div id="tag-filters" class="tag-group"></div>
+    </div>
+    <div class="filter-group">
+      <label class="filter-label">Max Blended Cost ($ per 1M tokens)</label>
+      <input type="range" id="price-slider" min="0" max="40" step="0.5" value="40">
+      <span id="price-slider-value">$40.00</span>
+    </div>
+  </section>
+
+  <!-- Use Case Insights Matrix -->
+  <section id="use-case-section">
+    <h2>Use Case Recommendations</h2>
+    <div class="use-case-legend">
+      <div class="legend-item"><span class="legend-icon">&#127942;</span> <strong>Best Performance</strong> — highest quality score, any price</div>
+      <div class="legend-item"><span class="legend-icon">&#9889;</span> <strong>Best Value</strong> — best score among price-efficient (Pareto) models</div>
+      <div class="legend-item"><span class="legend-icon">&#128176;</span> <strong>Budget</strong> — cheapest model that still meets a quality bar</div>
+      <div class="legend-pricing"><strong>Prices shown:</strong> "send" = cost per 1M tokens in your prompt &middot; "recv" = cost per 1M tokens in the model's response. Click any card for details.</div>
+    </div>
+    <div id="use-case-grid" class="use-case-grid"></div>
+  </section>
+
+  <!-- Monthly Cost Estimator -->
+  <section id="cost-section">
+    <h2>What Will This Actually Cost Me?</h2>
+    <p class="section-subtitle">LLM APIs charge per token (~&frac34; of a word). You pay one rate for tokens you <strong>send</strong> (your prompt) and a higher rate for tokens you <strong>receive</strong> (the model's response). Adjust your usage below to see real costs.</p>
+    <div class="cost-controls">
+      <div class="cost-presets">
+        <label class="filter-label">Usage Profile</label>
+        <div class="preset-group">
+          <button class="preset-btn active" data-preset="solo">Solo Dev</button>
+          <button class="preset-btn" data-preset="team">Small Team</button>
+          <button class="preset-btn" data-preset="tool">Internal Tool</button>
+          <button class="preset-btn" data-preset="app">Customer App</button>
+          <button class="preset-btn" data-preset="pipeline">High Volume</button>
+          <button class="preset-btn" data-preset="custom">Custom</button>
+        </div>
+      </div>
+      <div class="cost-sliders">
+        <div class="cost-slider-group">
+          <label>Requests / day: <strong id="req-per-day-val">50</strong></label>
+          <input type="range" id="req-per-day" min="1" max="100000" value="50" step="1">
+        </div>
+        <div class="cost-slider-group">
+          <label>Avg tokens you send (prompt) / request: <strong id="avg-input-val">800</strong></label>
+          <input type="range" id="avg-input" min="50" max="10000" value="800" step="50">
+        </div>
+        <div class="cost-slider-group">
+          <label>Avg tokens you receive (response) / request: <strong id="avg-output-val">1200</strong></label>
+          <input type="range" id="avg-output" min="50" max="10000" value="1200" step="50">
+        </div>
+      </div>
+    </div>
+    <div id="cost-savings-callout" class="cost-savings-callout"></div>
+    <div class="table-wrapper">
+      <table id="cost-table">
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>Model</th>
+            <th>Daily Cost</th>
+            <th>Monthly Cost (30d)</th>
+            <th>Annual Cost</th>
+            <th>Business Impact</th>
+            <th>vs. Cheapest</th>
+          </tr>
+        </thead>
+        <tbody id="cost-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Scatter Plot -->
+  <section id="chart-section">
+    <h2>Price vs. Quality — Pareto Frontier</h2>
+    <div class="chart-controls">
+      <label>
+        <input type="radio" name="blend-mode" value="simple" checked> Simple Blend (avg)
+      </label>
+      <label>
+        <input type="radio" name="blend-mode" value="output-heavy"> Output-Heavy (3:1)
+      </label>
+    </div>
+    <div class="chart-container">
+      <canvas id="scatter-chart"></canvas>
+      <div id="chart-tooltip" class="chart-tooltip"></div>
+    </div>
+  </section>
+
+  <!-- Main Table -->
+  <section id="table-section">
+    <h2>Model Comparison Table</h2>
+    <p class="section-subtitle">All prices in USD per 1 million tokens (~750K words). "Send" = what you pay for your prompt. "Receive" = what you pay for the model's response.</p>
+    <div class="table-wrapper">
+      <table id="model-table">
+        <thead>
+          <tr>
+            <th data-sort="provider">Provider <span class="sort-arrow"></span></th>
+            <th data-sort="model">Model <span class="sort-arrow"></span></th>
+            <th data-sort="input_per_mtok">Send (Prompt) $ / 1M tok <span class="sort-arrow"></span></th>
+            <th data-sort="output_per_mtok">Receive (Response) $ / 1M tok <span class="sort-arrow"></span></th>
+            <th data-sort="blended">Blended $ / 1M tok <span class="sort-arrow"></span></th>
+            <th data-sort="context_window">Context <span class="sort-arrow"></span></th>
+            <th data-sort="quality">Quality Score <span class="sort-arrow"></span></th>
+            <th data-sort="mmlu">MMLU <span class="sort-arrow"></span></th>
+            <th data-sort="humaneval">HumanEval <span class="sort-arrow"></span></th>
+            <th data-sort="math">MATH <span class="sort-arrow"></span></th>
+            <th data-sort="gpqa">GPQA <span class="sort-arrow"></span></th>
+            <th data-sort="swe_bench">SWE-bench <span class="sort-arrow"></span></th>
+            <th data-sort="arena_elo">Arena ELO <span class="sort-arrow"></span></th>
+            <th>Tags</th>
+          </tr>
+        </thead>
+        <tbody id="model-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer id="footer">
+    <div class="footer-content">
+      <div class="footer-sources">
+        <h3>Data Sources</h3>
+        <div id="footer-source-links"></div>
+      </div>
+      <div class="footer-methodology">
+        <h3>Methodology</h3>
+        <p><strong>Blended Cost:</strong> Simple = (send + receive) / 2. Output-Heavy = (send + 3 &times; receive) / 4. "Send" = prompt tokens, "Receive" = response tokens.</p>
+        <p><strong>Quality Score:</strong> Weighted average of normalized benchmarks (0-100). Null benchmarks excluded from average.</p>
+        <p><strong>Pareto Frontier:</strong> Models where no cheaper model has a higher quality score. Gold-highlighted in the table.</p>
+        <p><strong>Use Case Scores:</strong> Manually curated 1-100 scores per domain based on benchmark performance and community consensus.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
