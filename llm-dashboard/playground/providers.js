@@ -60,12 +60,15 @@
   const adapters = {
     openai: {
       buildRequest(apiKey, modelId, messages, options) {
+        // Reasoning models (o1, o3, o3-mini) don't support temperature
+        const REASONING_MODELS = ['o1', 'o3', 'o3-mini'];
+        const isReasoning = REASONING_MODELS.includes(modelId);
         const body = {
           model: modelId,
           messages: messages,
-          temperature: options.temperature ?? 0.7,
-          max_tokens: options.maxTokens ?? 2048,
+          max_completion_tokens: options.maxTokens ?? 2048,
         };
+        if (!isReasoning) body.temperature = options.temperature ?? 0.7;
         if (options.stream) body.stream = true;
         if (options.stream) body.stream_options = { include_usage: true };
         return {

@@ -26,19 +26,41 @@
   <main class="playground-layout">
     <!-- LEFT PANEL: Config & Prompt -->
     <div class="pg-panel pg-panel-left">
-      <!-- Use Case Selector -->
+      <!-- 1. System Prompt -->
       <div class="pg-config-section">
-        <label for="select-usecase">Use Case</label>
-        <select id="select-usecase" class="pg-select">
-          <option value="">-- Select a use case --</option>
-        </select>
+        <label for="system-prompt">System Prompt</label>
+        <textarea id="system-prompt" class="pg-textarea pg-textarea-system-open" placeholder="Describe the role and behavior you want from the model..."></textarea>
+        <div class="pg-system-actions">
+          <button id="btn-optimize" class="pg-btn">Optimize with AI</button>
+          <button id="btn-save-system" class="pg-btn">Save to Library</button>
+          <button id="btn-library" class="pg-btn">Load from Library</button>
+        </div>
       </div>
 
-      <!-- Model Selector -->
+      <!-- 2. User Prompt -->
+      <div class="pg-config-section" style="flex:1;display:flex;flex-direction:column">
+        <label for="user-prompt">Your Prompt</label>
+        <textarea id="user-prompt" class="pg-textarea pg-textarea-prompt" style="flex:1" placeholder="Type your message here..."></textarea>
+        <div class="pg-prompt-stats">
+          <span id="token-estimate">~0 tokens</span>
+          <span id="cost-estimate">Est: $0.000</span>
+        </div>
+      </div>
+
+      <!-- 3. Model (auto-selected, user can override) -->
       <div class="pg-config-section">
-        <label for="select-model">Model</label>
+        <div class="pg-model-row">
+          <label for="select-model">Model</label>
+          <div id="detected-usecase" class="pg-detected-usecase" style="display:none">
+            <span class="detected-label">Detected:</span>
+            <span id="detected-usecase-name"></span>
+          </div>
+        </div>
         <select id="select-model" class="pg-select">
-          <option value="">-- Select a model --</option>
+          <option value="">-- Auto-selected based on your prompt --</option>
+        </select>
+        <select id="select-usecase" class="pg-usecase-override" style="display:none">
+          <option value="">Auto</option>
         </select>
         <div id="model-recommendation" class="pg-recommendation" style="display:none">
           <span class="rec-badge">Recommended</span>
@@ -46,34 +68,10 @@
         </div>
       </div>
 
-      <!-- System Prompt (collapsible) -->
-      <div class="pg-config-section">
-        <div id="system-prompt-section" class="pg-collapsible">
-          <div class="pg-collapsible-header" id="toggle-system-prompt">
-            <span>System Prompt (advanced)</span>
-            <span class="arrow">&#9654;</span>
-          </div>
-          <div class="pg-collapsible-body">
-            <textarea id="system-prompt" class="pg-textarea pg-textarea-system" placeholder="Optional system instructions for the model..."></textarea>
-          </div>
-        </div>
-      </div>
-
-      <!-- User Prompt -->
-      <div class="pg-config-section" style="flex:1;display:flex;flex-direction:column">
-        <label for="user-prompt">Your Prompt</label>
-        <textarea id="user-prompt" class="pg-textarea pg-textarea-prompt" style="flex:1" placeholder="Type your prompt here..."></textarea>
-        <div class="pg-prompt-stats">
-          <span id="token-estimate">~0 tokens</span>
-          <span id="cost-estimate">Est: $0.000</span>
-        </div>
-      </div>
-
-      <!-- Action Buttons -->
+      <!-- Send -->
       <div class="pg-actions">
-        <button id="btn-optimize" class="pg-btn">Optimize</button>
-        <button id="btn-library" class="pg-btn">Library</button>
         <button id="btn-send" class="pg-btn pg-btn-primary" disabled>Send</button>
+        <button id="btn-pipeline" class="pg-btn pg-btn-pipeline" disabled>Pipeline</button>
       </div>
     </div>
 
@@ -89,7 +87,7 @@
         <!-- Messages -->
         <div id="messages" class="pg-messages">
           <div class="pg-empty-state">
-            Select a model and type a prompt to get started.
+            Type a prompt to get started. The best model will be selected automatically.
           </div>
         </div>
 
@@ -240,6 +238,35 @@
     </div>
   </div>
 
+  <!-- Pipeline Modal -->
+  <div id="modal-pipeline" class="pg-modal-overlay">
+    <div class="pg-modal" style="max-width:720px">
+      <div class="pg-modal-header">
+        <h2>Multi-Model Pipeline</h2>
+        <button class="pg-btn-icon modal-close">&times;</button>
+      </div>
+      <div class="pg-modal-body">
+        <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.75rem">
+          Chain models together: each stage's output feeds into the next. Customize stages, models, and prompts below.
+        </p>
+        <div class="pg-pipeline-progress" style="display:none">
+          <div class="pg-pipeline-progress-bar">
+            <div class="pg-pipeline-progress-fill" style="width:0%"></div>
+          </div>
+          <span class="pg-pipeline-progress-text">0 / 0</span>
+        </div>
+        <div id="pipeline-stages" class="pg-pipeline-stages"></div>
+        <button id="btn-add-stage" class="pg-btn" style="margin-top:0.5rem;font-size:0.78rem">+ Add Stage</button>
+      </div>
+      <div class="pg-modal-footer">
+        <button id="btn-pipeline-reset" class="pg-btn">Reset Defaults</button>
+        <button id="btn-pipeline-abort" class="pg-btn pg-btn-danger" style="display:none">Abort</button>
+        <button id="btn-pipeline-run" class="pg-btn pg-btn-primary">Run Pipeline</button>
+        <button class="pg-btn modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Hidden file input for import -->
   <input type="file" id="import-file-input" accept=".json" style="display:none">
 
@@ -247,6 +274,7 @@
   <script src="providers.js"></script>
   <script src="library.js"></script>
   <script src="optimizer.js"></script>
+  <script src="pipeline.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

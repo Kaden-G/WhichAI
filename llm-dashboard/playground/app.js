@@ -14,6 +14,7 @@
   let conversationMode = false;
   let messageHistory = []; // {role, content}
   let isStreaming = false;
+  let isPipelineRunning = false;
 
   // Cost tracking
   let sessionCost = 0;
@@ -36,6 +37,63 @@
     rag_agents: 'RAG / Agents',
     feature_engineering: 'Feature Engineering',
   };
+
+  // ===== Prompt → Use Case Classifier =====
+  const USE_CASE_KEYWORDS = {
+    coding: ['code', 'function', 'bug', 'debug', 'refactor', 'implement', 'program', 'script', 'api', 'class', 'method', 'variable', 'compile', 'syntax', 'unit test', 'pull request', 'git', 'commit', 'deploy', 'backend', 'frontend', 'database', 'sql', 'html', 'css', 'javascript', 'python', 'java', 'rust', 'typescript', 'react', 'node', 'django', 'flask', 'algorithm', 'data structure', 'regex', 'lint', 'test'],
+    reasoning: ['analyze', 'pros and cons', 'compare', 'evaluate', 'argue', 'justify', 'logic', 'reasoning', 'think through', 'trade-off', 'tradeoff', 'decision', 'strategy', 'root cause', 'why did', 'explain why', 'implications', 'consequences', 'critical thinking', 'debate'],
+    classification: ['classify', 'categorize', 'label', 'sentiment', 'intent', 'detect', 'identify type', 'sort into', 'which category', 'positive or negative', 'spam', 'topic classification', 'is this'],
+    extraction: ['extract', 'parse', 'pull out', 'find all', 'identify entities', 'ner', 'named entity', 'structured data', 'json from', 'scrape', 'get the', 'list all', 'key information'],
+    summarization: ['summarize', 'summary', 'tldr', 'brief', 'condense', 'key points', 'main ideas', 'executive summary', 'meeting notes', 'digest', 'overview', 'recap', 'shorten'],
+    math: ['calculate', 'solve', 'equation', 'formula', 'math', 'integral', 'derivative', 'statistics', 'probability', 'algebra', 'geometry', 'calculus', 'proof', 'theorem', 'compute', 'percentage', 'average', 'median', 'standard deviation'],
+    creative: ['write a story', 'write a poem', 'blog post', 'essay', 'creative', 'draft an email', 'write an email', 'marketing copy', 'tagline', 'slogan', 'narrative', 'fiction', 'compose', 'rewrite', 'tone', 'engaging', 'catchy', 'persuasive', 'write a letter', 'article'],
+    translation: ['translate', 'translation', 'in spanish', 'in french', 'in german', 'in japanese', 'in chinese', 'in korean', 'in portuguese', 'in italian', 'in arabic', 'to english', 'from english', 'multilingual', 'localize', 'localization'],
+    data_labeling: ['label data', 'annotate', 'annotation', 'labeling', 'tag data', 'training data label', 'ground truth', 'inter-annotator'],
+    synthetic_data: ['generate data', 'synthetic', 'fake data', 'test data', 'mock data', 'sample data', 'augment data', 'data augmentation', 'generate examples', 'create dataset'],
+    rag_agents: ['rag', 'retrieval', 'agent', 'tool use', 'tool call', 'function calling', 'search and answer', 'knowledge base', 'grounded', 'context documents', 'cite sources', 'agentic'],
+    feature_engineering: ['feature engineer', 'feature extraction', 'feature selection', 'transform features', 'create features', 'feature importance', 'ml pipeline', 'preprocessing', 'encode categorical', 'normalization'],
+  };
+
+  let autoClassifyTimeout = null;
+
+  function classifyPrompt(text) {
+    if (!text || text.length < 10) return null;
+    const lower = text.toLowerCase();
+    const scores = {};
+    for (const [useCase, keywords] of Object.entries(USE_CASE_KEYWORDS)) {
+      let score = 0;
+      for (const kw of keywords) {
+        if (lower.includes(kw)) score++;
+      }
+      if (score > 0) scores[useCase] = score;
+    }
+    if (Object.keys(scores).length === 0) return null;
+    return Object.entries(scores).sort((a, b) => b[1] - a[1])[0][0];
+  }
+
+  function autoClassifyAndUpdate() {
+    const systemText = document.getElementById('system-prompt').value;
+    const userText = document.getElementById('user-prompt').value;
+    const combined = systemText + ' ' + userText;
+    const detected = classifyPrompt(combined);
+    const indicator = document.getElementById('detected-usecase');
+    if (detected) {
+      const sel = document.getElementById('select-usecase');
+      if (sel.value !== detected) {
+        sel.value = detected;
+        populateModels(detected);
+      }
+      indicator.style.display = 'flex';
+      document.getElementById('detected-usecase-name').textContent = USE_CASE_LABELS[detected];
+    } else {
+      indicator.style.display = 'none';
+    }
+  }
+
+  function debouncedAutoClassify() {
+    clearTimeout(autoClassifyTimeout);
+    autoClassifyTimeout = setTimeout(autoClassifyAndUpdate, 400);
+  }
 
   // ===== Pareto Logic (ported from dashboard) =====
   function blendedCost(m) {
@@ -83,6 +141,7 @@
     allModels = DATA.models;
 
     window.Providers.initProviderMap(allModels);
+    window.Providers._allModels = allModels;
     loadSettings();
     initTheme();
     populateUseCases();
@@ -90,6 +149,7 @@
     initEventListeners();
     updateCostDisplay();
     populateLibraryFilter();
+    updatePipelineButton();
   }
 
   // ===== Theme =====
@@ -138,6 +198,7 @@
     }
 
     updateSendButton();
+    updatePipelineButton();
     closeModal('modal-settings');
   }
 
@@ -398,14 +459,29 @@
     const modelName = document.getElementById('select-model').value;
     const provider = modelName ? window.Providers.getProvider(modelName) : null;
     const hasKey = provider ? !!apiKeys[provider] : false;
-    btn.disabled = isStreaming || !modelName || !hasKey;
+    const busy = isStreaming || isPipelineRunning;
+    btn.disabled = busy || !modelName || !hasKey;
     btn.textContent = isStreaming ? 'Sending...' : 'Send';
+    updatePipelineButton();
+  }
+
+  function updatePipelineButton() {
+    const btn = document.getElementById('btn-pipeline');
+    if (!btn) return;
+    const hasAnyKey = !!(apiKeys.openai || apiKeys.anthropic || apiKeys.google);
+    const busy = isStreaming || isPipelineRunning;
+    btn.disabled = busy || !hasAnyKey;
+    if (isPipelineRunning) {
+      btn.textContent = 'Running...';
+    } else {
+      btn.textContent = 'Pipeline';
+    }
   }
 
   function clearChat() {
     messageHistory = [];
     const messagesDiv = document.getElementById('messages');
-    messagesDiv.innerHTML = '<div class="pg-empty-state">Select a model and type a prompt to get started.</div>';
+    messagesDiv.innerHTML = '<div class="pg-empty-state">Type a prompt to get started. The best model will be selected automatically.</div>';
     document.getElementById('response-stats').style.display = 'none';
     document.getElementById('btn-copy').style.display = 'none';
     document.getElementById('btn-export').style.display = 'none';
@@ -483,14 +559,14 @@
         e.stopPropagation();
         document.getElementById('system-prompt').value = item.systemPrompt || '';
         document.getElementById('user-prompt').value = item.userPrompt || '';
-        // Open system prompt if it has content
-        if (item.systemPrompt) {
-          document.getElementById('system-prompt-section').classList.add('open');
-        }
-        // Set use case if item has one
+        // Set use case if item has one, otherwise auto-detect
         if (item.useCase) {
           document.getElementById('select-usecase').value = item.useCase;
           populateModels(item.useCase);
+          document.getElementById('detected-usecase').style.display = 'flex';
+          document.getElementById('detected-usecase-name').textContent = USE_CASE_LABELS[item.useCase] || item.useCase;
+        } else {
+          autoClassifyAndUpdate();
         }
         updatePromptStats();
         closeModal('modal-library');
@@ -531,23 +607,35 @@
   }
 
   // ===== Optimizer =====
+  // Picks the best available provider for optimization: OpenAI preferred, then Anthropic, then Google
+  function getOptimizerConfig() {
+    const preferred = [
+      { provider: 'openai', model: 'GPT-4o-mini' },
+      { provider: 'anthropic', model: 'Claude Haiku 4.5' },
+      { provider: 'google', model: 'Gemini 2.0 Flash' },
+    ];
+    for (const p of preferred) {
+      if (apiKeys[p.provider]) return p;
+    }
+    return null;
+  }
+
   async function runOptimizer() {
     const input = document.getElementById('optimizer-input').value.trim();
     if (!input) return;
 
-    const modelName = document.getElementById('select-model').value;
-    if (!modelName) { alert('Select a model first.'); return; }
-
-    const provider = window.Providers.getProvider(modelName);
-    if (!provider) { alert('Selected model is info-only.'); return; }
-    if (!apiKeys[provider]) { alert(`No API key for ${provider}. Set one in Settings.`); return; }
+    const config = getOptimizerConfig();
+    if (!config) {
+      alert('Add an API key in Settings first. OpenAI is preferred for optimization.');
+      return;
+    }
 
     const btn = document.getElementById('btn-run-optimizer');
     btn.disabled = true;
     btn.innerHTML = '<span class="pg-spinner"></span> Optimizing...';
 
     try {
-      const result = await window.PromptOptimizer.optimizePrompt(input, provider, apiKeys[provider], modelName);
+      const result = await window.PromptOptimizer.optimizePrompt(input, config.provider, apiKeys[config.provider], config.model);
       document.getElementById('optimizer-system').textContent = result.systemPrompt;
       document.getElementById('optimizer-user').textContent = result.userPrompt;
       document.getElementById('optimizer-explanation').textContent = result.explanation;
@@ -566,9 +654,323 @@
     const usr = document.getElementById('optimizer-user').textContent;
     document.getElementById('system-prompt').value = sys;
     document.getElementById('user-prompt').value = usr;
-    if (sys) document.getElementById('system-prompt-section').classList.add('open');
     updatePromptStats();
+    debouncedAutoClassify();
     closeModal('modal-optimizer');
+  }
+
+  function saveSystemPromptToLibrary() {
+    const systemPrompt = document.getElementById('system-prompt').value.trim();
+    if (!systemPrompt) { alert('Write a system prompt first.'); return; }
+    const name = prompt('Name for this system prompt:');
+    if (!name) return;
+    const detected = classifyPrompt(systemPrompt);
+    window.PromptLibrary.savePrompt({
+      name,
+      useCase: detected || '',
+      systemPrompt,
+      userPrompt: '',
+    });
+    alert('Saved to library!');
+  }
+
+  // ===== Pipeline =====
+  function openPipelineModal() {
+    renderPipelineStages();
+    document.getElementById('btn-pipeline-abort').style.display = 'none';
+    document.getElementById('btn-pipeline-run').style.display = '';
+    document.querySelector('.pg-pipeline-progress').style.display = 'none';
+    openModal('modal-pipeline');
+  }
+
+  function getCallableModels() {
+    return allModels.filter(m => window.Providers.isBig3(m.provider));
+  }
+
+  function getProviderColor(provider) {
+    const colors = {
+      openai: 'var(--color-openai)',
+      anthropic: 'var(--color-anthropic)',
+      google: 'var(--color-google)',
+    };
+    return colors[provider] || 'var(--accent)';
+  }
+
+  function renderPipelineStages() {
+    const container = document.getElementById('pipeline-stages');
+    const stages = window.Pipeline.getStages();
+    const callableModels = getCallableModels();
+    let html = '';
+
+    stages.forEach((stage, i) => {
+      const resolvedModel = window.Pipeline.resolveModel(stage, apiKeys);
+      const provider = resolvedModel ? window.Providers.getProvider(resolvedModel) : null;
+
+      if (i > 0) {
+        html += '<div class="pg-pipeline-connector"></div>';
+      }
+
+      html += `<div class="pg-pipeline-stage-card${i === 0 ? ' open' : ''}" data-stage-index="${i}">
+        <div class="pg-pipeline-stage-header">
+          <span class="pg-pipeline-stage-badge">${i + 1}</span>
+          <span class="pg-pipeline-stage-label">${escapeHtml(stage.label)}</span>
+          <span class="pg-pipeline-stage-model-badge" style="${provider ? 'background:' + getProviderColor(provider) + ';color:#fff' : ''}">
+            ${resolvedModel ? escapeHtml(resolvedModel) : 'No model available'}
+          </span>
+          <div class="pg-pipeline-stage-actions">
+            ${i > 0 ? `<button data-action="move-up" title="Move up">&uarr;</button>` : ''}
+            ${i < stages.length - 1 ? `<button data-action="move-down" title="Move down">&darr;</button>` : ''}
+            ${stages.length > window.Pipeline.MIN_STAGES ? `<button data-action="remove" title="Remove">&times;</button>` : ''}
+          </div>
+          <span class="pg-pipeline-stage-toggle">\u25BC</span>
+        </div>
+        <div class="pg-pipeline-stage-body">
+          <label>Label</label>
+          <input type="text" class="pg-input" value="${escapeHtml(stage.label)}" data-field="label" style="margin-bottom:0.3rem">
+
+          <label>System Prompt</label>
+          <textarea data-field="systemPrompt">${escapeHtml(stage.systemPrompt)}</textarea>
+
+          <label>Model Override</label>
+          <select class="pg-select" data-field="modelOverride" style="margin-bottom:0.3rem">
+            <option value="">Auto (use preference list)</option>
+            ${callableModels.map(m => {
+              const p = window.Providers.getProvider(m.model);
+              const hasKey = p ? !!apiKeys[p] : false;
+              return `<option value="${escapeHtml(m.model)}" ${stage.modelOverride === m.model ? 'selected' : ''} ${!hasKey ? 'disabled' : ''}>
+                ${escapeHtml(m.model)}${!hasKey ? ' (no key)' : ''}
+              </option>`;
+            }).join('')}
+          </select>
+
+          <label>Temperature</label>
+          <div class="pg-pipeline-temp-row">
+            <input type="range" min="0" max="1" step="0.1" value="${stage.temperature}" data-field="temperature">
+            <span class="pg-pipeline-temp-value">${stage.temperature}</span>
+          </div>
+        </div>
+      </div>`;
+    });
+
+    container.innerHTML = html;
+
+    // Update add stage button
+    const addBtn = document.getElementById('btn-add-stage');
+    addBtn.style.display = stages.length >= window.Pipeline.MAX_STAGES ? 'none' : '';
+
+    // Wire stage card events
+    container.querySelectorAll('.pg-pipeline-stage-card').forEach(card => {
+      const idx = parseInt(card.dataset.stageIndex);
+
+      // Toggle collapse
+      card.querySelector('.pg-pipeline-stage-header').addEventListener('click', (e) => {
+        if (e.target.closest('.pg-pipeline-stage-actions')) return;
+        card.classList.toggle('open');
+      });
+
+      // Move up
+      const moveUpBtn = card.querySelector('[data-action="move-up"]');
+      if (moveUpBtn) {
+        moveUpBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          syncStageEdits();
+          window.Pipeline.moveStage(idx, idx - 1);
+          renderPipelineStages();
+        });
+      }
+
+      // Move down
+      const moveDownBtn = card.querySelector('[data-action="move-down"]');
+      if (moveDownBtn) {
+        moveDownBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          syncStageEdits();
+          window.Pipeline.moveStage(idx, idx + 1);
+          renderPipelineStages();
+        });
+      }
+
+      // Remove
+      const removeBtn = card.querySelector('[data-action="remove"]');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.Pipeline.removeStage(idx);
+          renderPipelineStages();
+        });
+      }
+
+      // Temperature slider live update
+      const tempSlider = card.querySelector('[data-field="temperature"]');
+      const tempValue = card.querySelector('.pg-pipeline-temp-value');
+      if (tempSlider && tempValue) {
+        tempSlider.addEventListener('input', () => {
+          tempValue.textContent = tempSlider.value;
+        });
+      }
+    });
+  }
+
+  function syncStageEdits() {
+    const container = document.getElementById('pipeline-stages');
+    const cards = container.querySelectorAll('.pg-pipeline-stage-card');
+    cards.forEach(card => {
+      const idx = parseInt(card.dataset.stageIndex);
+      const label = card.querySelector('[data-field="label"]')?.value;
+      const systemPrompt = card.querySelector('[data-field="systemPrompt"]')?.value;
+      const modelOverride = card.querySelector('[data-field="modelOverride"]')?.value || null;
+      const temperature = parseFloat(card.querySelector('[data-field="temperature"]')?.value) || 0.7;
+      window.Pipeline.updateStage(idx, { label, systemPrompt, modelOverride, temperature });
+    });
+  }
+
+  async function runPipelineFromModal() {
+    const userPrompt = document.getElementById('user-prompt').value.trim();
+    if (!userPrompt) {
+      alert('Type a prompt in the "Your Prompt" field first.');
+      return;
+    }
+
+    syncStageEdits();
+
+    const stages = window.Pipeline.getStages();
+    for (let i = 0; i < stages.length; i++) {
+      const resolved = window.Pipeline.resolveModel(stages[i], apiKeys);
+      if (!resolved) {
+        alert(`Stage "${stages[i].label}" has no available model. Add an API key or change the model.`);
+        return;
+      }
+    }
+
+    // Close modal and set up UI
+    closeModal('modal-pipeline');
+    isPipelineRunning = true;
+    updateSendButton();
+
+    const messagesDiv = document.getElementById('messages');
+    const empty = messagesDiv.querySelector('.pg-empty-state');
+    if (empty) empty.remove();
+
+    // Add user message bubble
+    addMessageToUI('user', userPrompt);
+
+    // Create result cards for each stage
+    const resultCards = [];
+    const pipelineContainer = document.createElement('div');
+    pipelineContainer.className = 'pg-pipeline-results';
+
+    stages.forEach((stage, i) => {
+      const resolved = window.Pipeline.resolveModel(stage, apiKeys);
+      const provider = resolved ? window.Providers.getProvider(resolved) : null;
+      const card = document.createElement('div');
+      card.className = 'pg-pipeline-result-card';
+      card.innerHTML = `
+        <div class="pg-pipeline-result-header">
+          <span class="pg-pipeline-result-badge" style="background:var(--border)">${i + 1}</span>
+          <span class="pg-pipeline-result-label">${escapeHtml(stage.label)}</span>
+          <span class="pg-pipeline-result-model" style="background:${getProviderColor(provider)}">${escapeHtml(resolved || '?')}</span>
+          <span class="pg-pipeline-result-stats"></span>
+          <span class="pg-pipeline-result-toggle">\u25BC</span>
+        </div>
+        <div class="pg-pipeline-result-body"></div>
+      `;
+
+      card.querySelector('.pg-pipeline-result-header').addEventListener('click', () => {
+        card.classList.toggle('open');
+      });
+
+      pipelineContainer.appendChild(card);
+      resultCards.push(card);
+    });
+
+    messagesDiv.appendChild(pipelineContainer);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+    // Show action buttons
+    document.getElementById('btn-copy').style.display = '';
+    document.getElementById('btn-export').style.display = '';
+    document.getElementById('btn-new').style.display = '';
+
+    const pipelineStartTime = Date.now();
+
+    await window.Pipeline.runPipeline(userPrompt, apiKeys, {
+      onStageStart(stageIndex, stage, resolvedModel) {
+        const card = resultCards[stageIndex];
+        card.classList.add('open', 'result-active');
+        card.querySelector('.pg-pipeline-result-badge').style.background = 'var(--accent)';
+        card.querySelector('.pg-pipeline-result-body').textContent = '';
+        card.querySelector('.pg-pipeline-result-body').classList.add('pg-streaming-cursor');
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      },
+
+      onStageChunk(stageIndex, chunk) {
+        if (chunk.content) {
+          const body = resultCards[stageIndex].querySelector('.pg-pipeline-result-body');
+          body.textContent += chunk.content;
+          messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+      },
+
+      onStageComplete(stageIndex, result) {
+        const card = resultCards[stageIndex];
+        card.classList.remove('result-active');
+        card.querySelector('.pg-pipeline-result-body').classList.remove('pg-streaming-cursor');
+        card.querySelector('.pg-pipeline-result-badge').style.background = 'var(--success)';
+        card.querySelector('.pg-pipeline-result-stats').textContent =
+          `${result.inputTokens.toLocaleString()}+${result.outputTokens.toLocaleString()} tok | $${result.cost.toFixed(4)} | ${result.time.toFixed(1)}s`;
+
+        // Auto-collapse completed stage
+        card.classList.remove('open');
+
+        // Track cost
+        sessionCost += result.cost;
+        sessionBreakdown.push({
+          model: result.model,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          cost: result.cost,
+          timestamp: new Date().toISOString(),
+          pipelineStage: result.label,
+        });
+        updateCostDisplay();
+      },
+
+      onStageError(stageIndex, error) {
+        const card = resultCards[stageIndex];
+        card.classList.remove('result-active');
+        card.classList.add('open');
+        card.querySelector('.pg-pipeline-result-body').classList.remove('pg-streaming-cursor');
+        card.querySelector('.pg-pipeline-result-badge').style.background = 'var(--danger)';
+        card.querySelector('.pg-pipeline-result-body').textContent = `Error: ${error.message}`;
+        card.querySelector('.pg-pipeline-result-body').style.color = 'var(--danger)';
+      },
+
+      onPipelineComplete(summary) {
+        isPipelineRunning = false;
+        updateSendButton();
+
+        const totalTime = ((Date.now() - pipelineStartTime) / 1000).toFixed(1);
+
+        // Show gold summary bar
+        const summaryBar = document.createElement('div');
+        summaryBar.className = 'pg-pipeline-summary';
+        summaryBar.innerHTML = `
+          <span class="pg-pipeline-summary-label">Pipeline Complete</span>
+          <div class="pg-pipeline-summary-left">
+            <span><strong>${summary.stages.length}</strong> stages</span>
+            <span><strong>${(summary.totalInputTokens + summary.totalOutputTokens).toLocaleString()}</strong> tokens</span>
+            <span><strong>$${summary.totalCost.toFixed(4)}</strong></span>
+            <span><strong>${totalTime}s</strong></span>
+          </div>
+        `;
+        pipelineContainer.appendChild(summaryBar);
+
+        // Show response stats
+        showResponseStats(summary.totalInputTokens, summary.totalOutputTokens, summary.totalCost, totalTime);
+
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      },
+    });
   }
 
   // ===== Event Listeners =====
@@ -584,14 +986,15 @@
       updatePromptStats();
     });
 
-    // System prompt toggle
-    document.getElementById('toggle-system-prompt').addEventListener('click', () => {
-      document.getElementById('system-prompt-section').classList.toggle('open');
+    // Prompt typing → live stats + auto-classify use case
+    document.getElementById('user-prompt').addEventListener('input', () => {
+      updatePromptStats();
+      debouncedAutoClassify();
     });
-
-    // Prompt typing → live stats
-    document.getElementById('user-prompt').addEventListener('input', updatePromptStats);
-    document.getElementById('system-prompt').addEventListener('input', updatePromptStats);
+    document.getElementById('system-prompt').addEventListener('input', () => {
+      updatePromptStats();
+      debouncedAutoClassify();
+    });
 
     // Send
     document.getElementById('btn-send').addEventListener('click', sendMessage);
@@ -692,14 +1095,37 @@
       e.target.value = '';
     });
 
-    // Optimizer
+    // Optimizer — pre-fill with current system prompt
     document.getElementById('btn-optimize').addEventListener('click', () => {
+      const currentSystem = document.getElementById('system-prompt').value.trim();
+      document.getElementById('optimizer-input').value = currentSystem;
       document.getElementById('optimizer-result').classList.remove('visible');
       document.getElementById('btn-use-optimized').style.display = 'none';
       openModal('modal-optimizer');
     });
     document.getElementById('btn-run-optimizer').addEventListener('click', runOptimizer);
     document.getElementById('btn-use-optimized').addEventListener('click', useOptimizedPrompt);
+
+    // Save system prompt to library
+    document.getElementById('btn-save-system').addEventListener('click', saveSystemPromptToLibrary);
+
+    // Pipeline
+    document.getElementById('btn-pipeline').addEventListener('click', openPipelineModal);
+    document.getElementById('btn-pipeline-run').addEventListener('click', runPipelineFromModal);
+    document.getElementById('btn-pipeline-reset').addEventListener('click', () => {
+      window.Pipeline.resetStages();
+      renderPipelineStages();
+    });
+    document.getElementById('btn-pipeline-abort').addEventListener('click', () => {
+      window.Pipeline.abortPipeline();
+      isPipelineRunning = false;
+      updateSendButton();
+    });
+    document.getElementById('btn-add-stage').addEventListener('click', () => {
+      syncStageEdits();
+      window.Pipeline.addStage();
+      renderPipelineStages();
+    });
 
     // Response actions
     document.getElementById('btn-copy').addEventListener('click', () => {
