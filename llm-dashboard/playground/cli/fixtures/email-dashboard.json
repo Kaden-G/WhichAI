@@ -1,0 +1,18 @@
+{
+  "projectName": "email-executive-dashboard",
+  "description": "Build a Python CLI tool called 'email-dash' that provides an executive email dashboard and reply drafter.\n\nThe tool reads a JSON file containing email threads and produces:\n1. An executive summary dashboard (printed to stdout) showing: total emails, unread count, top 5 senders, urgency breakdown (high/medium/low), and action items extracted from email bodies.\n2. A reply drafting mode where the user specifies an email ID and gets an AI-generated reply draft (using a simple template — no actual LLM call needed, just pattern-based).\n\nCLI Interface:\n  email-dash summary <emails.json>        — Print the executive dashboard\n  email-dash reply <emails.json> <email_id> — Draft a reply for the specified email\n  email-dash stats <emails.json>           — Print sender statistics\n\nInput JSON format (emails.json):\n[\n  {\n    \"id\": \"msg-001\",\n    \"from\": \"alice@example.com\",\n    \"to\": \"exec@company.com\",\n    \"subject\": \"Q4 Budget Review\",\n    \"body\": \"Please review the attached Q4 budget. Action needed: approve by Friday.\",\n    \"date\": \"2024-01-15T09:30:00Z\",\n    \"read\": false,\n    \"urgency\": \"high\",\n    \"thread_id\": \"thread-001\"\n  }\n]\n\nRequirements:\n- Pure Python 3.10+, no external dependencies (stdlib only).\n- Use argparse for CLI.\n- Include a sample emails.json test fixture with at least 8 realistic emails.\n- Include unit tests using unittest.\n- Action items are extracted by looking for phrases like 'action needed:', 'please review', 'deadline:', 'by Friday', etc.\n- Reply drafting uses simple templates based on urgency and subject keywords.\n- Output should be formatted with clear headers and alignment.\n- Include proper error handling for missing files, invalid JSON, unknown email IDs.",
+  "language": "python",
+  "entrypoint": "email_dash.py",
+  "cliSignature": "email-dash {summary|reply|stats} <emails.json> [email_id]",
+  "inputFormat": "JSON file with array of email objects (id, from, to, subject, body, date, read, urgency, thread_id)",
+  "outputFormat": "Formatted text to stdout",
+  "dependencies": [],
+  "constraints": [
+    "Python 3.10+ stdlib only — no pip packages",
+    "Must use argparse for CLI argument parsing",
+    "Must include unit tests",
+    "Must include sample data fixture",
+    "Action item extraction must be keyword-based, not LLM-based",
+    "Reply drafting must be template-based, not LLM-based"
+  ]
+}

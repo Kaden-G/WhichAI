@@ -249,6 +249,25 @@
         <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.75rem">
           Chain models together: each stage's output feeds into the next. Customize stages, models, and prompts below.
         </p>
+
+        <!-- Mode Selector -->
+        <div class="pg-pipeline-mode-selector">
+          <button class="pg-pipeline-mode-tab active" data-mode="full">Full Implementation</button>
+          <button class="pg-pipeline-mode-tab" data-mode="brainstorm">Brainstorm Only</button>
+        </div>
+        <div id="pipeline-mode-desc" class="pg-pipeline-mode-desc">Plan &rarr; Review &rarr; Build &rarr; QA &rarr; Present</div>
+
+        <!-- Project Spec (collapsible) -->
+        <div class="pg-pipeline-spec-section">
+          <div class="pg-pipeline-spec-toggle" id="pipeline-spec-toggle">
+            <span>Project Spec (shared constraints)</span>
+            <span class="pg-pipeline-spec-arrow">&#9654;</span>
+          </div>
+          <div class="pg-pipeline-spec-body" id="pipeline-spec-body" style="display:none">
+            <textarea id="pipeline-spec" class="pg-textarea" placeholder="Define shared constants, thresholds, naming conventions, etc. These will be enforced across all stages.&#10;&#10;Example:&#10;MAX_RETRIES = 3&#10;TIMEOUT_MS = 5000&#10;DB_NAME = &quot;myapp_prod&quot;" style="min-height:80px;font-family:var(--mono);font-size:0.8rem"></textarea>
+          </div>
+        </div>
+
         <div class="pg-pipeline-progress" style="display:none">
           <div class="pg-pipeline-progress-bar">
             <div class="pg-pipeline-progress-fill" style="width:0%"></div>
